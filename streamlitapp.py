@@ -255,6 +255,7 @@ def make_species_counts_fig(percent_range=(75, 100)):
                  barmode = 'overlay')
     fig.update_layout(yaxis={'categoryorder':'total ascending', 'title': None,
                              'automargin': True, 'dtick':1},
+                      xaxis={'fixedrange': True},
                       # margin=dict(l=250),
                       dragmode='pan')
 
@@ -279,7 +280,10 @@ def make_species_each_county_fig():
                  orientation='h', height=1000,
                  barmode = 'overlay',
                  range_y = [low, high])
-    fig.update_layout(yaxis={'automargin': True, 'dtick':1, 'title': None}, dragmode='pan')
+    fig.update_layout(yaxis={'automargin': True, 'dtick':1, 'title': None},
+                      xaxis={'fixedrange': True},
+                      dragmode='pan')
+
 
     return fig
 
@@ -321,7 +325,10 @@ def make_county_counts_fig():
                  range_y = [low, high],
                  barmode = 'overlay')
     fig.update_layout(yaxis={'automargin': True, 'dtick': 1, 'title': None},
+                      xaxis={'fixedrange': True},
                       dragmode='pan')
+
+
     return fig
 
 # map_tab, samples_each_species_tab, species_each_county_tab, counties_each_species_tab
