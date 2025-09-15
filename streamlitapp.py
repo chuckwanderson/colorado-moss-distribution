@@ -161,6 +161,8 @@ with map_tab:
     else:
         with open('gdf.pkl', 'rb') as f:
             gdf = pickle.load(f)
+
+    # get map from https://www.arcgis.com/apps/mapviewer/index.html?featurecollection=https%3A%2F%2Fbasemap.nationalmap.gov%2Farcgis%2Frest%2Fservices%3Ff%3Djson%26option%3Dfootprints&supportsProjection=true&supportsJSONP=true
         
     fig.update_layout(
         map_layers=[
@@ -268,6 +270,15 @@ def make_species_each_county_fig():
     for co, sp in species_each_county.items():
         if co != '?':
             result.append([len(sp), co])
+
+    # Add county names without any species
+    counties = pd.read_csv('county-names.csv', dtype=str).values.astype(str)
+    counties = [c[0] for c in counties]
+    counties_in_results = [r[1] for r in result]
+    for c in counties:
+        if c not in counties_in_results:
+            result.append([0, c])
+
     result = pd.DataFrame(result, columns=('Number of Species', 'County'))
     result = result.sort_values(by='Number of Species', ascending=True)
 
@@ -346,3 +357,27 @@ with counties_each_species_tab:
     fig3 = make_county_counts_fig()
     st.plotly_chart(fig3)
 
+
+# timeline of collections
+# see timeline.py!!
+
+# import datetime as dt
+
+# def to_datetime(date_str):
+#     return dt.datetime.strptime(date_str, '%Y-%m-%d')
+
+# def all_to_datetime(df):
+#     dates = df.eventDate
+#     datetimes = []
+#     for d in dates:
+#         if not pd.isna(d):
+#             try:
+#                 datetimes.append(to_datetime(d))
+#             except:
+#                 pass
+#     return datetimes
+
+# datetimes = all_to_datetime(deduplicated)
+
+# fig = px.histgram(datetimes)
+# fig
