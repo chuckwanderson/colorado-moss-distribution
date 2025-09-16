@@ -231,7 +231,7 @@ with map_tab:
     # f'{search_result_df.shape=}'
 
 
-    f'Selected {search_result_df.shape[0]} samples.  Scroll down in the table to see all samples.'
+    f'Selected {search_result_df.shape[0]:,d} samples.  Scroll down in the table to see all samples.'
     
     st.dataframe(search_result_df,
                  column_config={'packet': st.column_config.LinkColumn('packet',
