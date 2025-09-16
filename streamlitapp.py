@@ -332,7 +332,7 @@ def make_county_counts_fig():
     result['Species'] = result['Species'].apply(lambda n: ' '.join(n.split()[:2]))
     result = result.sort_values(by=f'Number of Counties', ascending=True)
     # result = result[-100:]
-    xtext = f'Number of Counties)'
+    xtext = f'Number of Counties'
     high = float(len(result)) + 1
     low = high - high * 0.05
     fig = px.bar(result, x='Number of Counties', y='Species',
