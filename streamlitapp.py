@@ -199,7 +199,7 @@ with map_tab:
                      # lon=selected_with_gps['lon'].mean()),
                      lat=39,
                      lon=-105.545167),
-                 style="light",  # You can choose other styles like "open-street-map", "streets", "dark", etc.
+                 style="open-street-map",  # You can choose other styles like "open-street-map", "streets", "dark", etc.
                  pitch=0,
                  zoom=6),
     )
