@@ -332,12 +332,12 @@ def make_county_counts_fig():
     result['Species'] = result['Species'].apply(lambda n: ' '.join(n.split()[:2]))
     result = result.sort_values(by=f'Number of Counties', ascending=True)
     # result = result[-100:]
-    xtext = f'Number of Counties (Total of {len(counties)} counties)'
+    xtext = f'Number of Counties)'
     high = float(len(result)) + 1
     low = high - high * 0.05
     fig = px.bar(result, x='Number of Counties', y='Species',
                  labels={'Number of Counties': xtext},
-                 title=f'Number of Counties (out of {len(counties)}) With Each Species',
+                 title=f'Number of Counties With Each Species)',
                  orientation='h', height=1000,
                  range_y = [low, high],
                  barmode = 'overlay')
@@ -408,25 +408,24 @@ def make_timeline_fig():
 # map_tab, samples_each_species_tab, species_each_county_tab, counties_each_species_tab
 
 with samples_each_species_tab:    
+    st.markdown(':green[Click and drag on chart to see more species.]')
     fig1 = make_species_counts_fig()
     st.plotly_chart(fig1)
-    'Scroll with mouse button down to see more of bar chart.'
 
     
 with species_each_county_tab:
+    st.markdown(':green[Click and drag on chart to see more counties.]')
     fig2 = make_species_each_county_fig()
     st.plotly_chart(fig2)
-    'Scroll with mouse button down to see more of bar chart.'
-
 
 
 with counties_each_species_tab:
+    st.markdown(':green[Click and drag on chart to see more species.]')
     fig3 = make_county_counts_fig()
     st.plotly_chart(fig3)
-    'Scroll with mouse button down to see more of bar chart.'
-
 
 with timeline_tab:
+    st.markdown(':green[Click and drag on chart to zoom in]')
+
     fig4 = make_timeline_fig()
     st.plotly_chart(fig4)
-    'Use mouse to zoom.'
