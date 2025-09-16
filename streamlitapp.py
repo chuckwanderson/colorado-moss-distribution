@@ -409,19 +409,27 @@ def make_timeline_fig():
 with samples_each_species_tab:    
     fig1 = make_species_counts_fig()
     st.plotly_chart(fig1)
+    'Scroll with mouse button down to see more of bar chart.'
+
     
 with species_each_county_tab:
     fig2 = make_species_each_county_fig()
     st.plotly_chart(fig2)
+    'Scroll with mouse button down to see more of bar chart.'
+
 
 
 with counties_each_species_tab:
     fig3 = make_county_counts_fig()
     st.plotly_chart(fig3)
+    'Scroll with mouse button down to see more of bar chart.'
+
 
 with timeline_tab:
     fig4 = make_timeline_fig()
     st.plotly_chart(fig4)
+    'Use mouse to zoom.'
+
     
 # timeline of collections
 # see timeline.py!!
