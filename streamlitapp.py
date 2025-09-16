@@ -164,14 +164,15 @@ with map_tab:
         
     fig.update_layout(
         map_layers=[
-            # {
-            #     "below": "traces",
-            #     "sourcetype": "raster",
-            #     "sourceattribution": "United States Geological Survey",
-            #     "source": [
-            #         "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}"
-            #     ],
-            # },
+            {
+                "below": "traces",
+                "sourcetype": "raster",
+                "sourceattribution": "United States Geological Survey",
+                "source": [
+                    "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}"
+                ],
+                'opacity': 0.3
+            },
             {
                 "source": json.loads(gdf.geometry.to_json()),
                 "below": "traces",
@@ -429,28 +430,3 @@ with timeline_tab:
     fig4 = make_timeline_fig()
     st.plotly_chart(fig4)
     'Use mouse to zoom.'
-
-    
-# timeline of collections
-# see timeline.py!!
-
-# import datetime as dt
-
-# def to_datetime(date_str):
-#     return dt.datetime.strptime(date_str, '%Y-%m-%d')
-
-# def all_to_datetime(df):
-#     dates = df.eventDate
-#     datetimes = []
-#     for d in dates:
-#         if not pd.isna(d):
-#             try:
-#                 datetimes.append(to_datetime(d))
-#             except:
-#                 pass
-#     return datetimes
-
-# datetimes = all_to_datetime(deduplicated)
-
-# fig = px.histgram(datetimes)
-# fig
