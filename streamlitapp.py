@@ -108,8 +108,8 @@ def get_county_boundaries():
 df, groups, merges, counties, species = load_no_dups('no_dups.pkl') #df_groups.pkl')
 
 # map_tab, counts_tab = st.tabs(('Map', 'Counts by Species\nand Counties'))
-map_tab, samples_each_species_tab, species_each_county_tab, counties_each_species_tab = st.tabs(
-    ('Map', 'Samples Each Species', 'Species Each County', 'Counties Seach Species'))
+map_tab, samples_each_species_tab, species_each_county_tab, counties_each_species_tab, timeline_tab = st.tabs(
+    ('Map', 'Samples Each Species', 'Species Each County', 'Counties each Species', 'Timeline'))
 
 with map_tab:
 
@@ -140,14 +140,11 @@ with map_tab:
     # not_county_centers = selected_with_gps[ones_not_county_centers]  # pd.isna(selected_with_gps['countyCenterUsed'])]
     # with_county_centers = selected_with_gps[~ones_not_county_centers]  # selected_with_gps['countyCenterUsed'] == 1]
 
-
-    # with col2:
-
     fig = go.Figure(go.Scattermap(
         lat=selected_with_gps['lat'],  # must show all so indices selected work to show table
         lon=selected_with_gps['lon'],
         mode='markers',
-        marker={'color': 'LightGreen',
+        marker={'color': 'Green',
                 'symbol': 'circle',
                 'size': 10},
         text=selected_with_gps['hovertext'],
@@ -161,28 +158,29 @@ with map_tab:
     else:
         with open('gdf.pkl', 'rb') as f:
             gdf = pickle.load(f)
+        gdf = gdf[gdf['STATEFP']=='08']
 
     # get map from https://www.arcgis.com/apps/mapviewer/index.html?featurecollection=https%3A%2F%2Fbasemap.nationalmap.gov%2Farcgis%2Frest%2Fservices%3Ff%3Djson%26option%3Dfootprints&supportsProjection=true&supportsJSONP=true
         
     fig.update_layout(
         map_layers=[
-            {
-                "below": "traces",
-                "sourcetype": "raster",
-                "sourceattribution": "United States Geological Survey",
-                "source": [
-                    "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}"
-                ],
-            },
+            # {
+            #     "below": "traces",
+            #     "sourcetype": "raster",
+            #     "sourceattribution": "United States Geological Survey",
+            #     "source": [
+            #         "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}"
+            #     ],
+            # },
             {
                 "source": json.loads(gdf.geometry.to_json()),
                 "below": "traces",
                 "type": "line",
-                "color": "yellow",
+                "color": "black",  #"yellow" if above map fro US Geological Survey is included
                 "line": {"width": 0.5},
             },
         ],
-        mapbox_style="white-bg",
+        # mapbox_style="white-bg",
         hovermode='closest', 
         showlegend=False,
         height=800,
@@ -196,24 +194,31 @@ with map_tab:
 
         map=dict(bearing=0,
                  center=go.layout.map.Center(
-                     lat=selected_with_gps['lat'].mean(),
-                     lon=selected_with_gps['lon'].mean()),
+                     # lat=selected_with_gps['lat'].mean(),
+                     # lon=selected_with_gps['lon'].mean()),
+                     lat=39,
+                     lon=-105.545167),
                  style="light",  # You can choose other styles like "open-street-map", "streets", "dark", etc.
                  pitch=0,
                  zoom=6),
     )
+
     event = st.plotly_chart(fig, on_select='rerun', key='selected_points', selection_mode=('points', 'box', 'lasso'),
                             use_container_width=False)
 
     picked_indices = event['selection']['point_indices']
-    # f'{len(picked_indices)=}'
 
-    # picked_indices
-    # f'Number of selected ponts {len(picked_indices)}'
-    # 'selected_with_gps.iloc[picked_indices]'
+    if len(picked_indices) == 0:
+        # show all samples based on county and species
+        selected_these = selected_with_gps
 
-    selected_these = selected_with_gps.iloc[picked_indices]
-    # f'{selected_these.shape=}'
+    else:
+        # picked_indices
+        # f'Number of selected ponts {len(picked_indices)}'
+        # 'selected_with_gps.iloc[picked_indices]'
+
+        selected_these = selected_with_gps.iloc[picked_indices]
+        # f'{selected_these.shape=}'
 
     # selected_these = selected_with_gps.loc[picked_indices]
     show_columns = st.multiselect('Columns', selected_these.columns,
@@ -342,6 +347,63 @@ def make_county_counts_fig():
 
     return fig
 
+import datetime as dt
+@st.cache_data
+def make_timeline_fig():
+
+    def to_datetime(date_str):
+        return dt.datetime.strptime(date_str, '%Y-%m-%d')
+
+    def all_to_datetime(df):
+        dates = df.eventDate
+        datetimes = []
+        for d in dates:
+            if not pd.isna(d):
+                try:
+                    junk = to_datetime(d)
+                    # datetimes.append(to_datetime(d))
+                    if d > '1805':
+                        # some dates are 0003-01-01, 1800-01-01. 
+                        datetimes.append(d)
+                except:
+                    pass
+        return np.array(datetimes)
+
+    datetimes = all_to_datetime(deduplicated)
+
+    def count_by_month_and_by_year(datetimes, first_y, last_y):
+        by_month = []
+        by_year = []
+        years = [d[:4] for d in datetimes]
+        months = [d[5:7] for d in datetimes]
+        for y in range(first_y, last_y + 1):
+            sy = str(y)
+            matches = [dy for dy  in years if dy == sy]
+            count = len(matches)
+            by_year.append([sy, count])
+
+            for m in range(1, 13):
+                sm = f'{m:02d}'
+                matches = [(dy, dm) for dy, dm
+                           in zip(years, months) if dy == sy and dm == sm]
+                count = len(matches)
+                by_month.append([f'{sy}-{sm:>02s}-01', count])
+
+        return (pd.DataFrame(by_month, columns=('Date', 'count')),
+                pd.DataFrame(by_year, columns=('Date', 'count')))
+
+    by_month, by_year = count_by_month_and_by_year(datetimes, 1850, 2023)
+    # by_month, by_year = count_by_month_and_by_year(datetimes, 1850, 2023)
+
+    # px.line(x=counts['Date'], y=counts['count'])
+    # px.bar(x=by_month['Date'], y=by_month['count'])
+
+    fig = px.bar(x=by_year['Date'], y=by_year['count'],
+                 labels={'x': 'Year', 'y': 'Number of Collections'})
+
+    fig.update_xaxes(tickangle=45)
+    return fig
+
 # map_tab, samples_each_species_tab, species_each_county_tab, counties_each_species_tab
 
 with samples_each_species_tab:    
@@ -357,7 +419,10 @@ with counties_each_species_tab:
     fig3 = make_county_counts_fig()
     st.plotly_chart(fig3)
 
-
+with timeline_tab:
+    fig4 = make_timeline_fig()
+    st.plotly_chart(fig4)
+    
 # timeline of collections
 # see timeline.py!!
 
