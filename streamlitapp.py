@@ -15,7 +15,7 @@ pio.templates.default = 'seaborn' # "plotly"
 # using st.plotly_chart
 
 st.set_page_config(layout='wide')
-st.title('Exploring Colorado Moss List')
+st.title('Exploring Colorado Bryophytes')
 
 
 @st.cache_data
@@ -69,39 +69,52 @@ def load_deduplicated(filename):
     return deduplicated
 
 # https://stackoverflow.com/questions/69396009/add-us-county-boundaries-to-a-plotly-density-mapbox
+# def get_census_gov_county_boundaries():
+#     import urllib
+#     from pathlib import Path
+#     from zipfile import ZipFile
+#     import geopandas as gpd
+#     import requests
+
+#     # get geometry data as a geopandas dataframe
+#     src = [
+#         {
+#             "name": "counties",
+#             "suffix": ".shp",
+#             "url": "https://www2.census.gov/geo/tiger/GENZ2018/shp/cb_2018_us_county_5m.zip",
+#         },
+#     ]
+#     data = {}
+#     for s in src:
+#         f = Path.cwd().joinpath(urllib.parse.urlparse(s["url"]).path.split("/")[-1])
+#         if not f.exists():
+#             r = requests.get(s["url"],stream=True,)
+#             with open(f, "wb") as fd:
+#                 for chunk in r.iter_content(chunk_size=128): fd.write(chunk)
+
+#         fz = ZipFile(f)
+#         fz.extractall(f.parent.joinpath(f.stem))
+
+#         data[s["name"]] = gpd.read_file(
+#             f.parent.joinpath(f.stem).joinpath([f.filename
+#                                                 for f in fz.infolist()
+#                                                 if Path(f.filename).suffix == s["suffix"]][0])
+#         ).assign(source_name=s["name"])
+#     gdf = pd.concat(data.values()).to_crs("EPSG:4326")
+
+#     return gdf[gdf['STATEFP'] == '08']
+
+#     gdf = get_census_govcounty_boundaries()
+#     with open('gdf.pkl', 'wb') as f:
+#         pickle.dump(gdf, f)
+
+@st.cache_data
 def get_county_boundaries():
-    import urllib
-    from pathlib import Path
-    from zipfile import ZipFile
-    import geopandas as gpd
-    import requests
+    with open('gdf.pkl', 'rb') as f:
+        gdf = pickle.load(f)
+    return gdf[gdf['STATEFP'] == '08']
 
-    # get geometry data as a geopandas dataframe
-    src = [
-        {
-            "name": "counties",
-            "suffix": ".shp",
-            "url": "https://www2.census.gov/geo/tiger/GENZ2018/shp/cb_2018_us_county_5m.zip",
-        },
-    ]
-    data = {}
-    for s in src:
-        f = Path.cwd().joinpath(urllib.parse.urlparse(s["url"]).path.split("/")[-1])
-        if not f.exists():
-            r = requests.get(s["url"],stream=True,)
-            with open(f, "wb") as fd:
-                for chunk in r.iter_content(chunk_size=128): fd.write(chunk)
 
-        fz = ZipFile(f)
-        fz.extractall(f.parent.joinpath(f.stem))
-
-        data[s["name"]] = gpd.read_file(
-            f.parent.joinpath(f.stem).joinpath([f.filename
-                                                for f in fz.infolist()
-                                                if Path(f.filename).suffix == s["suffix"]][0])
-        ).assign(source_name=s["name"])
-    gdf = pd.concat(data.values()).to_crs("EPSG:4326")
-    return gdf
 
 ######################################################################
 
@@ -118,24 +131,29 @@ with map_tab:
         # col1, col2 = st.columns([1, 3])
         # with col1:
 
+    deduplicated = load_deduplicated('deduplicated.csv')
+    # selected = deduplicated.copy()
+    selected = deduplicated
+    #gps = selected[['gps', 'county', 'countyCenterUsed', 'acceptedName', 'species', 'date']]
+    selected_with_gps = selected[~pd.isna(selected['gps'])]
+
+    # f"%%%%%%%%%%%%%%%%% {len(selected_with_gps['acceptedName'].unique())=}"
+
     use_counties = st.multiselect('Counties', counties)
+    species = selected_with_gps['species'].unique()
     use_species = st.multiselect('Species', species)
 
     # use_counties = ['Larimer']
     # use_species = []
 
-    deduplicated = load_deduplicated('deduplicated.csv')
-    # selected = deduplicated.copy()
-    selected = deduplicated
 
     if len(use_counties) > 0:
-        selected = selected[selected['county'].isin(use_counties)]
+        selected_with_gps = selected_with_gps[selected_with_gps['county'].isin(use_counties)]
 
     if len(use_species) > 0:
-        selected = selected[selected['species'].isin(use_species)]
+        selected_with_gps = selected_with_gps[selected_with_gps['species'].isin(use_species)]
 
-    #gps = selected[['gps', 'county', 'countyCenterUsed', 'acceptedName', 'species', 'date']]
-    selected_with_gps = selected[~pd.isna(selected['gps'])]
+
     # ones_not_county_centers = ~pd.isna(selected_with_gps['countyCenterUsed'])
     # not_county_centers = selected_with_gps[ones_not_county_centers]  # pd.isna(selected_with_gps['countyCenterUsed'])]
     # with_county_centers = selected_with_gps[~ones_not_county_centers]  # selected_with_gps['countyCenterUsed'] == 1]
@@ -144,24 +162,31 @@ with map_tab:
         lat=selected_with_gps['lat'],  # must show all so indices selected work to show table
         lon=selected_with_gps['lon'],
         mode='markers',
-        marker={'color': 'Green',
-                'symbol': 'circle',
-                'size': 10},
+        marker={'color': 'Black',
+                #'symbol': 'circle',
+                #'borderwidth': 3,
+                'size': 8},
         text=selected_with_gps['hovertext'],
         hoverinfo='text',
         showlegend=False))
 
-    if False:
-        gdf = get_county_boundaries()
-        with open('gdf.pkl', 'wb') as f:
-            pickle.dump(gdf, f)
-    else:
-        with open('gdf.pkl', 'rb') as f:
-            gdf = pickle.load(f)
-        gdf = gdf[gdf['STATEFP']=='08']
+    fig.add_trace(go.Scattermap(
+        lat=selected_with_gps['lat'],  # must show all so indices selected work to show table
+        lon=selected_with_gps['lon'],
+        mode='markers',
+        marker={'color': 'Yellow', ##F58700',
+                #'symbol': 'circle',
+                #'borderwidth': 3,
+                'size': 6},
+        # text=selected_with_gps['hovertext'],
+        # hoverinfo='text',
+        showlegend=False))
+
 
     # get map from https://www.arcgis.com/apps/mapviewer/index.html?featurecollection=https%3A%2F%2Fbasemap.nationalmap.gov%2Farcgis%2Frest%2Fservices%3Ff%3Djson%26option%3Dfootprints&supportsProjection=true&supportsJSONP=true
         
+    gdf = get_county_boundaries()
+    
     fig.update_layout(
         map_layers=[
             {
