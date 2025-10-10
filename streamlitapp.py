@@ -143,6 +143,8 @@ with map_tab:
     species = selected_with_gps['species'].unique()
     use_species = st.multiselect('Species', species)
 
+    use_name = st.text_input('Enter a recordedBy last name.', '')
+    
     # use_counties = ['Larimer']
     # use_species = []
 
@@ -153,6 +155,9 @@ with map_tab:
     if len(use_species) > 0:
         selected_with_gps = selected_with_gps[selected_with_gps['species'].isin(use_species)]
 
+    recordedBys = selected_with_gps['recordedBy']
+    if use_name != '':
+        selected_with_gps = selected_with_gps[(pd.notna(recordedBys)) & (recordedBys.str.contains(use_name))]
 
     # ones_not_county_centers = ~pd.isna(selected_with_gps['countyCenterUsed'])
     # not_county_centers = selected_with_gps[ones_not_county_centers]  # pd.isna(selected_with_gps['countyCenterUsed'])]
