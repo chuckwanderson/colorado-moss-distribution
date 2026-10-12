@@ -7,6 +7,7 @@ import pickle
 import plotly.express as px
 import plotly.graph_objects as go
 import json
+import math
 
 import plotly.io as pio
 pio.templates.default = 'seaborn' # "plotly"
@@ -18,16 +19,16 @@ st.set_page_config(layout='wide')
 st.title('Exploring Colorado Bryophytes')
 
 
-@st.cache_data
-def load_no_dups(filename):
-    with open(filename, 'rb') as f:
-        merges, groups, df = pickle.load(f)
-    counties = np.unique(merges['county']).tolist()
-    counties.remove('')
-    # species = np.unique(merges['acceptedName Bryonames']).tolist()
-    species = [s.split() for s in np.unique(merges['acceptedName Bryonames'])]
-    species = [' '.join(s[:2]) for s in species if s[1][0].islower()]
-    return df, groups, merges, counties, species
+# @st.cache_data
+# def load_no_dups(filename):
+#     with open(filename, 'rb') as f:
+#         merges, groups, df = pickle.load(f)
+#     counties = np.unique(merges['county']).tolist()
+#     counties.remove('')
+#     # species = np.unique(merges['acceptedName Bryonames']).tolist()
+#     species = [s.split() for s in np.unique(merges['acceptedName Bryonames'])]
+#     species = [' '.join(s[:2]) for s in species if s[1][0].islower()]
+#     return df, groups, merges, counties, species
 
 @st.cache_data
 def load_species_each_county(filename):
@@ -51,21 +52,56 @@ def gps_to_float(row, index):
     return lat_or_lon
 
 @st.cache_data
+def make_species_counts():
+    species = deduplicated['acceptedNameUsage']
+    # species = [' '.join(s.split()[:2]) + ' ' for s in species]
+
+    species = np.array(species)
+    uniqs = np.unique(species)
+    result = pd.DataFrame([[u, sum(species == u)] for u in uniqs], columns=('species', 'count'))
+    result = result.sort_values('count', ascending=False)
+    return result
+
+@st.cache_data
 def load_deduplicated(filename):
-    deduplicated = pd.read_csv(filename)
+    deduplicated = pd.read_csv(filename, sep='\t')
     # Remove authority from each accepted Name
-    deduplicated['species'] = deduplicated['acceptedName'].apply(lambda gsa: ' '.join(gsa.split()[:2]))
+    deduplicated['species'] = deduplicated['acceptedNameUsage'].apply(lambda gsa: ' '.join(gsa.split()[:2]))
     # convert gps to lat and lon
-    deduplicated.loc[:, 'lat'] = deduplicated.apply(lambda row: gps_to_float(row, 0), axis=1)
-    deduplicated.loc[:, 'lon'] = deduplicated.apply(lambda row: gps_to_float(row, 1), axis=1)
+    gpses = {'packet': deduplicated['gps_packet'],
+             'county': deduplicated['gps_county'],
+             'verbatim': deduplicated['gps_verbatim'],
+             'llm': deduplicated.apply(lambda row: (row['latitude_llm'], row['longitude_llm']), axis=1)}
+    df_gpses = pd.DataFrame(gpses)
+    def pick_gps(row):
+        if eval(row['packet']) != (0, 0):
+            # print('packet', eval(row['packet']))
+            return [eval(row['packet']), 'packet']
+        if eval(row['verbatim']) != (0, 0):
+            return [eval(row['verbatim']), 'verbatim']
+        if not (math.isnan(row['llm'][0]) and math.isnan(row['llm'][1])):
+            # print('llm', row['llm'])
+            if row['llm'][0] < -10:
+                row['llm'] = (row['llm'][0] * -1, row['llm'][1])
+            return [row['llm'], 'llm']
+        # print('county', eval(row['county']))
+        return [eval(row['county']), 'county']
+
+    deduplicated[['use_this_gps', 'gps_source']] = df_gpses.apply(lambda row: pick_gps(row), axis=1, result_type='expand')
+    nope = deduplicated[deduplicated['use_this_gps'].apply(lambda gps: not isinstance(gps[0], float))]
+    good_gps_count = sum(deduplicated['use_this_gps'].apply(lambda gps: isinstance(gps[0], float)))
+    print(f'{good_gps_count} good gps values out of {deduplicated.shape[0]}')
+
+    # deduplicated.loc[:, 'lat'] = deduplicated.apply(lambda row: gps_to_float(row, 0), axis=1)
+    # deduplicated.loc[:, 'lon'] = deduplicated.apply(lambda row: gps_to_float(row, 1), axis=1)
     # text to show when hovering
     eds = [(d if not pd.isna(d) else '') for d in deduplicated['eventDate']]
     deduplicated.loc[:, 'hovertext'] = [s + ' ' + ed for (s, ed) in zip(deduplicated['species'], eds)]  # 'eventDate']].agg(' '.join, axis=1)
     # add delta gps values to ones using county centers
-    using_county_centers = deduplicated['countyCenterUsed'] == 1
-    n = sum(using_county_centers)
-    deduplicated.loc[using_county_centers,'lat'] += np.random.uniform(-0.01, 0.01, n)
-    deduplicated.loc[using_county_centers,'lon'] += np.random.uniform(-0.01, 0.01, n)
+    # using_county_centers = deduplicated['countyCenterUsed'] == 1
+    # n = sum(using_county_centers)
+    # deduplicated.loc[using_county_centers,'lat'] += np.random.uniform(-0.01, 0.01, n)
+    # deduplicated.loc[using_county_centers,'lon'] += np.random.uniform(-0.01, 0.01, n)
     return deduplicated
 
 # https://stackoverflow.com/questions/69396009/add-us-county-boundaries-to-a-plotly-density-mapbox
@@ -115,12 +151,79 @@ def get_county_boundaries():
     return gdf[gdf['STATEFP'] == '08']
 
 
-
+# SETUP #####################################################################
+deduplicated = load_deduplicated('deduplicated.tsv')
+species_each_county = load_species_each_county('species_each_county.pkl')
+counties_each_species = load_counties_each_species('counties_each_species.pkl')
+species_counts = make_species_counts()
 ######################################################################
 
-df, groups, merges, counties, species = load_no_dups('no_dups.pkl') #df_groups.pkl')
+# Sidebar #####################################################################
 
-# map_tab, counts_tab = st.tabs(('Map', 'Counts by Species\nand Counties'))
+with st.sidebar:
+
+    st.title('Map and Table Selections')
+    
+    # Remove entries without GPS coordinates
+    selected = deduplicated
+    #gps = selected[['gps', 'county', 'countyCenterUsed', 'acceptedName', 'species', 'date']]
+    selected_with_gps = selected[(~pd.isna(selected['use_this_gps'])) & (selected['use_this_gps'] != (0, 0)) & (selected['use_this_gps'] != (-1, -1))]
+
+    ## Counties
+    counties = list(deduplicated['county'].unique())
+    counties = [c for c in counties if isinstance(c, str)]  #  and not math.isnan(c)]
+    use_counties = st.multiselect('Counties', counties)
+    if len(use_counties) > 0:
+        selected_with_gps = selected_with_gps[selected_with_gps['county'].isin(use_counties)]
+
+    ## Species times collected
+    use_species_n_times = None
+    counts = species_counts['count']
+    min_count, max_count = counts.min(), counts.max()
+    use_species_n_times = st.slider(
+        "Select a range of number of times species collected:",
+        min_value=min_count, max_value=max_count,
+        value=(min_count, max_count))  # Default initial range
+    if use_species_n_times:
+        use_species = species_counts[(use_species_n_times[0] <= species_counts['count']) &
+                                     (species_counts['count'] <= use_species_n_times[1])]['species']
+        selected_with_gps = selected_with_gps[selected_with_gps['species'].isin(use_species)]
+
+    ## Species
+    species = selected_with_gps['species'].unique()
+    use_species = st.multiselect('Species', species)
+    if len(use_species) > 0:
+        selected_with_gps = selected_with_gps[selected_with_gps['species'].isin(use_species)]
+
+    ## recordedBy
+    use_name = st.text_input('Enter a recordedBy last name.', '')
+    recordedBys = selected_with_gps['recordedBy']
+    if use_name != '':
+        selected_with_gps = selected_with_gps[(pd.notna(recordedBys)) & (recordedBys.str.contains(use_name))]
+    
+    ## # duplicates
+    use_n_dups_range = None
+    n = deduplicated['# duplicates'].unique()
+    min_n = min(n)
+    max_n = max(n)
+    use_n_dups_range = st.slider(
+        "Select a range of number of duplicates:",
+        min_value=min_n, max_value=max_n,
+        value=(min_n, max_n))  # Default initial range
+
+    # use_n_dups = st.number_input("Choose number of duplicates:",
+    #                              min_value=min(n), max_value=max(n),
+    #                              value=10,  # Default starting value
+    #                              step=1)  # Forces integer increments
+
+
+    if use_n_dups_range:
+        selected_with_gps = selected_with_gps[(use_n_dups_range[0] <= selected_with_gps['# duplicates']) &
+                                              (selected_with_gps['# duplicates'] <= use_n_dups_range[1])]
+        
+######################################################################
+######################################################################
+
 map_tab, samples_each_species_tab, species_each_county_tab, counties_each_species_tab, timeline_tab = st.tabs(
     ('Map', 'Samples Each Species', 'Species Each County', 'Counties each Species', 'Timeline'))
 
@@ -131,41 +234,15 @@ with map_tab:
         # col1, col2 = st.columns([1, 3])
         # with col1:
 
-    deduplicated = load_deduplicated('deduplicated.csv')
-    # selected = deduplicated.copy()
-    selected = deduplicated
-    #gps = selected[['gps', 'county', 'countyCenterUsed', 'acceptedName', 'species', 'date']]
-    selected_with_gps = selected[~pd.isna(selected['gps'])]
-
-    # f"%%%%%%%%%%%%%%%%% {len(selected_with_gps['acceptedName'].unique())=}"
-
-    use_counties = st.multiselect('Counties', counties)
-    species = selected_with_gps['species'].unique()
-    use_species = st.multiselect('Species', species)
-
-    use_name = st.text_input('Enter a recordedBy last name.', '')
-    
-    # use_counties = ['Larimer']
-    # use_species = []
-
-
-    if len(use_counties) > 0:
-        selected_with_gps = selected_with_gps[selected_with_gps['county'].isin(use_counties)]
-
-    if len(use_species) > 0:
-        selected_with_gps = selected_with_gps[selected_with_gps['species'].isin(use_species)]
-
-    recordedBys = selected_with_gps['recordedBy']
-    if use_name != '':
-        selected_with_gps = selected_with_gps[(pd.notna(recordedBys)) & (recordedBys.str.contains(use_name))]
-
     # ones_not_county_centers = ~pd.isna(selected_with_gps['countyCenterUsed'])
     # not_county_centers = selected_with_gps[ones_not_county_centers]  # pd.isna(selected_with_gps['countyCenterUsed'])]
     # with_county_centers = selected_with_gps[~ones_not_county_centers]  # selected_with_gps['countyCenterUsed'] == 1]
 
+    gps_df = selected_with_gps['use_this_gps']
+    print('type', type(gps_df))
     fig = go.Figure(go.Scattermap(
-        lat=selected_with_gps['lat'],  # must show all so indices selected work to show table
-        lon=selected_with_gps['lon'],
+        lat=gps_df.apply(lambda x: x[0]),
+        lon=gps_df.apply(lambda x: x[1]),
         mode='markers',
         marker={'color': 'Black',
                 #'symbol': 'circle',
@@ -176,8 +253,8 @@ with map_tab:
         showlegend=False))
 
     fig.add_trace(go.Scattermap(
-        lat=selected_with_gps['lat'],  # must show all so indices selected work to show table
-        lon=selected_with_gps['lon'],
+        lat = gps_df.apply(lambda x: x[0]), # must show all so indices selected work to show table
+        lon = gps_df.apply(lambda x: x[1]),
         mode='markers',
         marker={'color': 'Yellow', ##F58700',
                 #'symbol': 'circle',
@@ -236,6 +313,7 @@ with map_tab:
 
     event = st.plotly_chart(fig, on_select='rerun', key='selected_points', selection_mode=('points', 'box', 'lasso'),
                             use_container_width=False)
+                            # width=False)
 
     picked_indices = event['selection']['point_indices']
 
@@ -253,7 +331,7 @@ with map_tab:
 
     # selected_these = selected_with_gps.loc[picked_indices]
     show_columns = st.multiselect('Columns', selected_these.columns,
-                                  default=['acceptedName', 'eventDate', 'county', 'recordedBy'])
+                                  default=['acceptedNameUsage', 'eventDate', 'county', 'recordedBy', 'use_this_gps', 'gps_source'])
 
     # selected_these.columns
     
@@ -271,23 +349,17 @@ with map_tab:
 
 ######################################################################
 
+
 @st.cache_data
 def make_species_counts_fig(percent_range=(75, 100)):
-    species = deduplicated['acceptedName']
-    species = [' '.join(s.split()[:2]) + ' ' for s in species]
-
-    species = np.array(species)
-    uniqs = np.unique(species)
-    result = pd.DataFrame([[u, sum(species == u)] for u in uniqs], columns=('species', 'count'))
-    result = result.sort_values('count', ascending=False)
-    total_number = result['count'].sum()
+    total_number = species_counts['count'].sum()
 
     # fig = go.Histogram(y=species)
     # fig = px.histogram(result, y='species', x='count', orientation='h')
-    high = float(len(result)) + 1
+    high = float(len(species_counts)) + 1
     low = high - high * 0.05
-    fig = px.bar(result, y='species', x='count', orientation='h',
-                 title=f'Number of samples for each species. Totals of {len(result)} species and {total_number:,} samples.',
+    fig = px.bar(species_counts, y='species', x='count', orientation='h',
+                 title=f'Number of samples for each species. Totals of {len(species_counts)} species and {total_number:,} samples.',
                  height=1000,
                  range_y = [low, high],
                  barmode = 'overlay')
@@ -301,7 +373,6 @@ def make_species_counts_fig(percent_range=(75, 100)):
 
 @st.cache_data
 def make_species_each_county_fig():
-    species_each_county = load_species_each_county('species_each_county.pkl')
     result = []
     for co, sp in species_each_county.items():
         if co != '?':
@@ -336,7 +407,6 @@ def make_species_each_county_fig():
 
 @st.cache_data
 def make_county_counts_fig():
-    counties_each_species = load_counties_each_species('counties_each_species.pkl')
     result = []
     for sp, counties_local in counties_each_species.items():
         result.append([len(counties_local), sp])
