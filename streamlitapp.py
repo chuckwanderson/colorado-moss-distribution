@@ -8,6 +8,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import json
 import math
+import geopandas
 
 import plotly.io as pio
 pio.templates.default = 'seaborn' # "plotly"
