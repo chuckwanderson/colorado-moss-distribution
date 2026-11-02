@@ -1,6 +1,7 @@
-# use tabbar.py example instead of tabs
+###  dups_scientific..... make list of all packets and institution codes for collectiosn with duplicates
 
 import streamlit as st
+import datetime as dt
 import pandas as pd
 import numpy as np
 import pickle
@@ -96,8 +97,9 @@ def load_deduplicated(filename):
     # deduplicated.loc[:, 'lat'] = deduplicated.apply(lambda row: gps_to_float(row, 0), axis=1)
     # deduplicated.loc[:, 'lon'] = deduplicated.apply(lambda row: gps_to_float(row, 1), axis=1)
     # text to show when hovering
-    eds = [(d if not pd.isna(d) else '') for d in deduplicated['eventDate']]
-    deduplicated.loc[:, 'hovertext'] = [s + ' ' + ed for (s, ed) in zip(deduplicated['species'], eds)]  # 'eventDate']].agg(' '.join, axis=1)
+    # eds = [(d if not pd.isna(d) else '') for d in deduplicated['eventDate']]
+    # deduplicated.loc[:, 'hovertext'] = [s + ' ' + ed for (s, ed) in zip(deduplicated['species'], eds)]  # 'eventDate']].agg(' '.join, axis=1)
+    deduplicated.loc[:, 'hovertext'] = deduplicated['species']
     # add delta gps values to ones using county centers
     # using_county_centers = deduplicated['countyCenterUsed'] == 1
     # n = sum(using_county_centers)
@@ -161,21 +163,42 @@ species_counts = make_species_counts()
 
 # Sidebar #####################################################################
 
+if "sidebar_version" not in st.session_state:
+    st.session_state['sidebar_version'] = 0
+
+def reset_sidebar_selections():
+    st.session_state['sidebar_version'] += 1
+
+sidebar_version = st.session_state['sidebar_version']
+
+# def clear_session_state():
+#     st.session_state.selected_counties = []
+#     st.session_state.slider_version += 1
+#     st.session_state.selected_species = []
+#     st.session_state.selected_recordedBy = ''
+    
+
+#     for key in st.session_state.keys():
+#         del st.session_state[key]
+        
 with st.sidebar:
 
     st.title('Map and Table Selections')
-    
+
+    # Change nan dates to '?'.  Needed for creating range of event dates.
+    nan_dates = [(i, d) for d in enumerate(deduplicated['eventDateFixed']) if isinstance(d, float)]
+    deduplicated.loc[nan_dates, 'eventDateFixed'] = '?'
+
     # Remove entries without GPS coordinates
     selected = deduplicated
-    #gps = selected[['gps', 'county', 'countyCenterUsed', 'acceptedName', 'species', 'date']]
     selected_with_gps = selected[(~pd.isna(selected['use_this_gps'])) & (selected['use_this_gps'] != (0, 0)) & (selected['use_this_gps'] != (-1, -1))]
 
     ## Counties
     counties = list(deduplicated['county'].unique())
     counties = [c for c in counties if isinstance(c, str)]  #  and not math.isnan(c)]
-    use_counties = st.multiselect('Counties', counties)
+    use_counties = st.multiselect('Counties', counties, key=f'selected_counties_{sidebar_version}')
     if len(use_counties) > 0:
-        selected_with_gps = selected_with_gps[selected_with_gps['county'].isin(use_counties)]
+        selected_with_gps = selected_with_gps[selected_with_gps['county'].isin(use_counties)]   # st.session_state.selected_counties)]
 
     ## Species times collected
     use_species_n_times = None
@@ -183,50 +206,98 @@ with st.sidebar:
     min_count, max_count = counts.min(), counts.max()
     use_species_n_times = st.slider(
         "Select a range of number of times species collected:",
-        min_value=min_count, max_value=max_count,
-        value=(min_count, max_count))  # Default initial range
-    if use_species_n_times:
-        use_species = species_counts[(use_species_n_times[0] <= species_counts['count']) &
-                                     (species_counts['count'] <= use_species_n_times[1])]['species']
+        min_value=min_count,
+        max_value=max_count,
+        value=(min_count, max_count),  # Default initial range
+        key=f'selected_times_collected_{sidebar_version}')
+
+    sp_count = use_species_n_times  # st.session_state[f'selected_times_collected_{st.session_state.slider_version}']
+    if sp_count:
+        use_species = species_counts[(sp_count[0] <= species_counts['count']) &
+                                     (species_counts['count'] <= sp_count[1])]['species']
         selected_with_gps = selected_with_gps[selected_with_gps['species'].isin(use_species)]
 
     ## Species
     species = selected_with_gps['species'].unique()
-    use_species = st.multiselect('Species', species)
-    if len(use_species) > 0:
-        selected_with_gps = selected_with_gps[selected_with_gps['species'].isin(use_species)]
+    use_species = st.multiselect('Species', species, key=f'selected_species_{sidebar_version}')
+    # if len(st.session_state.selected_species) > 0:
+    if len(use_species) > 0:  # st.session_state.selected_species) > 0:
+        selected_with_gps = selected_with_gps[selected_with_gps['species'].isin(use_species)]  # st.session_state.selected_species)]
+
+    ## Event date
+    def fix_dates(dstr):
+        # print(dstr, end=' -> ')
+        # if dstr[:4] == '1873':
+            # print(dstr)
+        if dstr[4] != '-':
+            dstr = dstr[:4] + '-' + dstr[5:]
+        if len(dstr) == 8:  # 20070114
+            dstr = dstr[:4] + '-' + dstr[4:6] + '-' + dstr[6:8]
+        if dstr.startswith('0000'):
+            dstr = '2000' + dstr[4:]
+        if dstr.endswith('00-00'):
+            dstr = dstr[:4] + ' 01-01'
+        if dstr.endswith('00'):
+            dstr = dstr[:8] + '01'
+        if dstr[5:7] == '00':
+            dstr = dstr[:4] + '01' + dstr[8:]
+        # print(dstr)
+        return dstr
+
+    selected_with_gps = selected_with_gps[selected_with_gps['eventDateFixed'].notna()]
+    selected_with_gps = selected_with_gps[selected_with_gps['eventDateFixed'].str.count('-') == 2]
+    selected_with_gps['eventDateFixed'] = selected_with_gps['eventDateFixed'].apply(fix_dates)
+    selected_with_gps['eventDateFixed'] = pd.to_datetime(selected_with_gps['eventDateFixed'], format='mixed')
+    dates = selected_with_gps['eventDateFixed'].unique()
+    dates = [d for d in dates.to_pydatetime() if not isinstance(d, float)]
+    min_d = min(dates)
+    max_d = max(dates)
+    use_dates = st.slider(
+        "Select a range of dates:",
+        min_value = min_d,
+        max_value = max_d,
+        value=(min_d, max_d),
+        key=f'selected_dates_{sidebar_version}')
+    # use_dates = st.session_state.selected_dates
+    if use_dates:
+        # selected_with_gps_with_date = selected_with_gps[selected_with_gps['eventDateFixed'].notna()]
+        selected_with_gps = selected_with_gps[(use_dates[0] <= selected_with_gps['eventDateFixed']) &
+                                              (selected_with_gps['eventDateFixed'] <= use_dates[1])]
 
     ## recordedBy
-    use_name = st.text_input('Enter a recordedBy last name.', '')
+    use_name = st.text_input('Enter a name of a collector.', '', key=f'selected_recordedBy_{sidebar_version}')
     recordedBys = selected_with_gps['recordedBy']
     if use_name != '':
-        selected_with_gps = selected_with_gps[(pd.notna(recordedBys)) & (recordedBys.str.contains(use_name))]
+        selected_with_gps = selected_with_gps[(pd.notna(recordedBys)) & (recordedBys.str.contains(use_name))]  # st.session_state.selected_recordedBy))]
     
     ## # duplicates
     use_n_dups_range = None
     n = deduplicated['# duplicates'].unique()
     min_n = min(n)
     max_n = max(n)
-    use_n_dups_range = st.slider(
+    use_n_dups = st.slider(
         "Select a range of number of duplicates:",
-        min_value=min_n, max_value=max_n,
-        value=(min_n, max_n))  # Default initial range
-
+        min_value=min_n,
+        max_value=max_n,
+        value=(min_n, max_n),  # Default initial range
+        key=f'selected_num_duplicates_{sidebar_version}')
     # use_n_dups = st.number_input("Choose number of duplicates:",
     #                              min_value=min(n), max_value=max(n),
     #                              value=10,  # Default starting value
     #                              step=1)  # Forces integer increments
+    # n_dups = st.session_state.selected_num_duplicates
+    if use_n_dups:
+        selected_with_gps = selected_with_gps[(use_n_dups[0] <= selected_with_gps['# duplicates']) &
+                                              (selected_with_gps['# duplicates'] <= use_n_dups[1])]
 
-
-    if use_n_dups_range:
-        selected_with_gps = selected_with_gps[(use_n_dups_range[0] <= selected_with_gps['# duplicates']) &
-                                              (selected_with_gps['# duplicates'] <= use_n_dups_range[1])]
+    
+    st.button('Clear all selections', on_click=reset_sidebar_selections)
         
 ######################################################################
 ######################################################################
 
 map_tab, samples_each_species_tab, species_each_county_tab, counties_each_species_tab, timeline_tab = st.tabs(
-    ('Map', 'Samples Each Species', 'Species Each County', 'Counties each Species', 'Timeline'))
+    ('Map and Table', 'Samples Each Species', 'Species Each County', 'Counties each Species', 'Timeline'))
 
 with map_tab:
 
@@ -249,7 +320,6 @@ with map_tab:
                 #'symbol': 'circle',
                 #'borderwidth': 3,
                 'size': 8},
-        text=selected_with_gps['hovertext'],
         hoverinfo='text',
         showlegend=False))
 
@@ -261,7 +331,9 @@ with map_tab:
                 #'symbol': 'circle',
                 #'borderwidth': 3,
                 'size': 6},
-        # text=selected_with_gps['hovertext'],
+        selected=dict(marker=dict(color='yellow', opacity=1.0, size=6)),
+        unselected=dict(marker=dict(color='orange', opacity=0.05, size=6)),
+        text=selected_with_gps['hovertext'],
         # hoverinfo='text',
         showlegend=False))
 
@@ -284,7 +356,7 @@ with map_tab:
             {
                 "source": json.loads(gdf.geometry.to_json()),
                 "below": "traces",
-                "type": "line",
+               "type": "line",
                 "color": "black",  #"yellow" if above map fro US Geological Survey is included
                 "line": {"width": 0.5},
             },
@@ -312,8 +384,14 @@ with map_tab:
                  zoom=6),
     )
 
-    event = st.plotly_chart(fig, on_select='rerun', key='selected_points', selection_mode=('points', 'box', 'lasso'),
-                            use_container_width=False)
+    st.text('Use the box or lasso selection tools to select samples to appear in the table below the map. Double click on the map to clear your current selection.')
+
+    event = st.plotly_chart(fig, on_select='rerun',
+                            key='selected_points',
+                            selection_mode=('points', 'box', 'lasso'),
+                            use_container_width=False,
+                            config={'displayModeBar': True},
+                            )
                             # width=False)
 
     picked_indices = event['selection']['point_indices']
@@ -330,6 +408,8 @@ with map_tab:
         selected_these = selected_with_gps.iloc[picked_indices]
         # f'{selected_these.shape=}'
 
+    selected_these = selected_these.rename(columns={'references': 'packets'})
+
     # selected_these = selected_with_gps.loc[picked_indices]
     show_columns = st.multiselect('Columns', selected_these.columns,
                                   default=['acceptedNameUsage', 'eventDate', 'county', 'recordedBy', 'use_this_gps', 'gps_source'])
@@ -340,13 +420,39 @@ with map_tab:
     # f'{search_result_df.shape=}'
 
 
-    f'Selected {search_result_df.shape[0]:,d} samples.  Scroll down in the table to see all samples.'
-    
-    st.dataframe(search_result_df,
-                 column_config={'packet': st.column_config.LinkColumn('packet',
-                                                                      display_text='packet image')})
+    f'Selected {search_result_df.shape[0]:,d} samples.  Scroll down in the table to see all samples. Click on a column heading to sort by that column.'
 
-    
+    st.dataframe(search_result_df, hide_index=True,
+                 column_config={'packets': st.column_config.LinkColumn('links to packets',
+                                                                       display_text='packet')})
+
+    csv_results = search_result_df.to_csv(index=False).encode('utf-8')
+    filename = 'moss_results.csv'
+
+    # with st.container(border=False):
+    #     # Inject CSS targeting buttons inside THIS container structure
+    #     st.markdown(
+    #         """
+    #         <style>
+    #         /* Target the download button inside the container */
+    #         div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"] button[data-testid="stDownloadButton"] {
+    #             background-color: #008800B; /* Change to your preferred hex color */
+    #             color: #DD0000;              /* Text color */
+    #             border-radius: 8px;        /* Optional: rounded corners */
+    #             border: none;
+    #         }
+
+    #         </style>
+    #         """,
+    #         unsafe_allow_html=True
+    #     )
+
+    st.download_button(label=f'**Download this table to {filename}**',
+                       data=csv_results,
+                       file_name=filename,
+                       mime='text/csv')
+
+
 
 ######################################################################
 
@@ -500,9 +606,15 @@ def make_timeline_fig():
     # px.line(x=counts['Date'], y=counts['count'])
     # px.bar(x=by_month['Date'], y=by_month['count'])
 
-    fig = px.bar(x=by_year['Date'], y=by_year['count'],
-                 labels={'x': 'Year', 'y': 'Number of Collections'})
+    # fig = px.bar(x=by_year['Date'], y=by_year['count'],
+    #              labels={'x': 'Year', 'y': 'Number of Collections'})
 
+    fig = px.bar(x=by_year['count'], y=by_year['Date'],
+                 height=2000,
+                 labels={'x': 'Number of Collections', 'y': 'Year'})
+
+    fig.update_yaxes(type='category', dtick=1)
+    
     fig.update_xaxes(tickangle=45)
     return fig
 
@@ -511,22 +623,22 @@ def make_timeline_fig():
 with samples_each_species_tab:    
     st.markdown(':green[Click and drag on chart to see more species.]')
     fig1 = make_species_counts_fig()
-    st.plotly_chart(fig1)
+    st.plotly_chart(fig1, config={'displayModeBar': True})
 
     
 with species_each_county_tab:
     st.markdown(':green[Click and drag on chart to see more counties.]')
     fig2 = make_species_each_county_fig()
-    st.plotly_chart(fig2)
+    st.plotly_chart(fig2, config={'displayModeBar': True})
 
 
 with counties_each_species_tab:
     st.markdown(':green[Click and drag on chart to see more species.]')
     fig3 = make_county_counts_fig()
-    st.plotly_chart(fig3)
+    st.plotly_chart(fig3, config={'displayModeBar': True})
 
 with timeline_tab:
     st.markdown(':green[Click and drag on chart to zoom in]')
 
     fig4 = make_timeline_fig()
-    st.plotly_chart(fig4)
+    st.plotly_chart(fig4, config={'displayModeBar': True})
