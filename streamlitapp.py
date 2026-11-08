@@ -19,7 +19,10 @@ pio.templates.default = 'seaborn' # "plotly"
 
 st.set_page_config(layout='wide')
 st.title('Exploring Colorado Bryophytes')
-
+st.warning(
+    body='*:red[Warning: This web page and associated data are under development.]*',
+    icon=":material/warning:"
+)
 
 # @st.cache_data
 # def load_no_dups(filename):
@@ -107,48 +110,59 @@ def load_deduplicated(filename):
     # deduplicated.loc[using_county_centers,'lon'] += np.random.uniform(-0.01, 0.01, n)
     return deduplicated
 
+
 # https://stackoverflow.com/questions/69396009/add-us-county-boundaries-to-a-plotly-density-mapbox
-# def get_census_gov_county_boundaries():
-#     import urllib
-#     from pathlib import Path
-#     from zipfile import ZipFile
-#     import geopandas as gpd
-#     import requests
+def get_census_gov_county_boundaries(state_name):
+    import urllib
+    from pathlib import Path
+    from zipfile import ZipFile
+    import geopandas as gpd
+    import requests
 
-#     # get geometry data as a geopandas dataframe
-#     src = [
-#         {
-#             "name": "counties",
-#             "suffix": ".shp",
-#             "url": "https://www2.census.gov/geo/tiger/GENZ2018/shp/cb_2018_us_county_5m.zip",
-#         },
-#     ]
-#     data = {}
-#     for s in src:
-#         f = Path.cwd().joinpath(urllib.parse.urlparse(s["url"]).path.split("/")[-1])
-#         if not f.exists():
-#             r = requests.get(s["url"],stream=True,)
-#             with open(f, "wb") as fd:
-#                 for chunk in r.iter_content(chunk_size=128): fd.write(chunk)
+    #  from list of FIPS codes at https://www.census.gov/library/reference/code-lists/ansi/ansi-codes-for-states.html#accordion-455dd4b1cd-item-2c5946f1b7
+    fips_codes = {
+        'Colorado': '08',
+        'New Mexico': '35',
+        'Arizona': '04'
+        }
 
-#         fz = ZipFile(f)
-#         fz.extractall(f.parent.joinpath(f.stem))
+    # get geometry data as a geopandas dataframe
+    src = [
+        {
+            "name": "counties",
+            "suffix": ".shp",
+            "url": "https://www2.census.gov/geo/tiger/GENZ2018/shp/cb_2018_us_county_5m.zip",
+        },
+    ]
+    data = {}
+    for s in src:
+        f = Path.cwd().joinpath(urllib.parse.urlparse(s["url"]).path.split("/")[-1])
+        if not f.exists():
+            r = requests.get(s["url"],stream=True,)
+            with open(f, "wb") as fd:
+                for chunk in r.iter_content(chunk_size=128): fd.write(chunk)
 
-#         data[s["name"]] = gpd.read_file(
-#             f.parent.joinpath(f.stem).joinpath([f.filename
-#                                                 for f in fz.infolist()
-#                                                 if Path(f.filename).suffix == s["suffix"]][0])
-#         ).assign(source_name=s["name"])
-#     gdf = pd.concat(data.values()).to_crs("EPSG:4326")
+        fz = ZipFile(f)
+        fz.extractall(f.parent.joinpath(f.stem))
 
-#     return gdf[gdf['STATEFP'] == '08']
+        data[s["name"]] = gpd.read_file(
+            f.parent.joinpath(f.stem).joinpath([f.filename
+                                                for f in fz.infolist()
+                                                if Path(f.filename).suffix == s["suffix"]][0])
+        ).assign(source_name=s["name"])
+    gdf = pd.concat(data.values()).to_crs("EPSG:4326")
 
-#     gdf = get_census_govcounty_boundaries()
-#     with open('gdf.pkl', 'wb') as f:
-#         pickle.dump(gdf, f)
+    if state_name not in fips_codes:
+        print(f'State {state_name} notin fips_codes {fips_codes}')
+    else:
+        gdf = gdf[gdf['STATEFP'] == fips_codes['New Mexico']]
+        with open('gdf.pkl', 'wb') as f:
+            pickle.dump(gdf, f)
 
 @st.cache_data
 def get_county_boundaries():
+    state_name = 'Colorado'
+    get_census_gov_county_boundaries(state_name)
     with open('gdf.pkl', 'rb') as f:
         gdf = pickle.load(f)
     return gdf[gdf['STATEFP'] == '08']
